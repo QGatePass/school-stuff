@@ -4,6 +4,23 @@
   Date Completed:  TBD
   ***************************************************
   This sketch is for Final Year Project[Biometric Lock System]
+      - Show the Date and Time
+      - Unlock the door using Fingerprint scanner
+      - Unlock the door using PIN code
+      - Enroll new fingerprints
+      - Delete fingerprints[All fingerprints will be deleted]
+      - Change PIN code
+      OUTPUT DEVICES
+          - 20 x 4 LCD with I2C backpack
+          - Solenoid Lock
+          - Light Emitting Diodes
+          - Buzzer
+      INPUT DEVICES
+          - 4 x 4 Matrix Keypad[Membrane]
+          - AS608 fingerprint scanner
+          - DS1307 RTC
+      POWER SUPPLY
+          - 3x 18650 batteries(12V)
 */
 
 #include <Adafruit_Fingerprint.h>
@@ -13,6 +30,11 @@
 #include <TimeLib.h>
 #include <DS1307RTC.h>
 #include <EEPROM.h>
+#include <RtcDS1302.h>
+
+ThreeWire myWire(12, 13, A2); // IO, SCLK, CE
+RtcDS1302<ThreeWire> Rtc(myWire);
+
 
 SoftwareSerial myserial(2, 3);
 LiquidCrystal_I2C lcd(0x27, 20, 4);
@@ -22,7 +44,7 @@ char code[5] = "8357";
 char entry[] = {};
 
 
-int green = 0, red = 1, buzzer = A0, lock = A1;
+int green = A4, red = 1, buzzer = A0, lock = A1;
 
 const byte ROWS = 4;  //four rows
 const byte COLS = 4;  //four columns
@@ -39,9 +61,11 @@ byte colPins[COLS] = {7,6,5,4}; //connect to the column pinouts of the keypad
 //initialize an instance of class NewKeypad and Fingerprint sensor
 Keypad keys = Keypad(makeKeymap(hexaKeys), rowPins, colPins, ROWS, COLS);
 Adafruit_Fingerprint finger = Adafruit_Fingerprint(&myserial);
+int templateCount;
 
 void setup() {
   Serial.begin(9600);
+  Rtc.Begin();
   pinMode(green, 1);
   pinMode(red, 1);
   pinMode(buzzer, 1);
@@ -64,6 +88,7 @@ void setup() {
 
 void loop() {
   char select = main_menu();
+  print_time();
   delay(3000);
   switch (select) {
     case '1':
@@ -89,6 +114,10 @@ void loop() {
 }
 
 char main_menu(void) {
+  /* The main interface of the device
+     @returns the choice made by the user by pressing the keypad
+     No enter key required  
+  */
   lcd.clear();
   print_time();
   lcd.setCursor(0, 0);
@@ -110,17 +139,17 @@ char main_menu(void) {
 
 
 void print_time() {   //This function MUST be called every time "lcd.clear" is called!
-  tmElements_t tm;
+  RtcDateTime tm = Rtc.GetDateTime();
   lcd.setCursor(0, 3);
-  lcd.print(tm.Day);
+  lcd.print(tm.Day());
   lcd.print('/');
-  lcd.print(tm.Month);
+  lcd.print(tm.Month());
   lcd.print('/');
-  lcd.print(tm.Year);
+  lcd.print(tm.Year());
   lcd.setCursor(15, 3);
-  lcd.print(tm.Hour);
+  lcd.print(tm.Hour());
   lcd.print(':');
-  lcd.print(tm.Minute);
+  lcd.print(tm.Minute());
   lcd.setCursor(0, 0);
   return;
 }
@@ -134,6 +163,12 @@ void finger_unlock(){   //Check for valid registered print and unlock the door
  int result = finger.getImage();
   
   // If a finger is detected
+  while (result != FINGERPRINT_OK){
+    result = finger.getImage();
+    lcd.setCursor(0,2);
+    lcd.print("No Finger!");
+
+  }
   if (result == FINGERPRINT_OK) {
     Serial.println("Finger detected!");
     
@@ -278,8 +313,8 @@ void enroll_finger() {
   int p = -1;
 
   // Get the current number of stored templates
-  int templateCount = finger.getTemplateCount();
-  if (templateCount < 0) {
+  finger.getTemplateCount();
+  if (finger.templateCount < 0) {
     lcd.clear();
     lcd.print("Error reading");
     delay(2000);
@@ -287,7 +322,7 @@ void enroll_finger() {
   }
   
   // Check if there is space for more fingerprints
-  if (templateCount >= 127) { // Assuming max is 127
+  if (finger.templateCount >= 127) { // Assuming max is 127
     lcd.clear();
     lcd.print("Storage full!");
     delay(2000);
@@ -295,7 +330,7 @@ void enroll_finger() {
   }
 
   // Determine the next available ID
-  int id = templateCount + 1; // Next available ID
+  int id = finger.templateCount + 1; // Next available ID
 
   lcd.clear();
   lcd.print("Place your finger...");
